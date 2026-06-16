@@ -158,7 +158,7 @@ async def test_file_delete(client: httpx.AsyncClient) -> None:
     assert get_resp.status_code == 404
 
 
-# ── 6. 404 for nonexistent single resource ────────────────
+# ── 6. 502 when no runner bound for nonexistent single resource ──
 
 
 async def test_get_nonexistent_resource_returns_error(
