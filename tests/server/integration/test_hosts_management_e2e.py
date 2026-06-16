@@ -4,11 +4,13 @@ Covers gaps not exercised by test_hosts_api.py or test_hosts_filesystem.py:
 
 - ``GET /v1/runners`` returns empty when no runners are connected.
 - ``GET /v1/runners/{id}/status`` returns offline for an unknown runner.
+- ``GET /v1/runners/{id}/status`` omits error field with no exit report.
 - ``GET /v1/hosts/{id}`` response shape includes the ``runners`` field.
 - ``POST /v1/hosts/{id}/runners`` with missing ``session_id`` returns 422.
-- ``GET /v1/hosts/{id}/filesystem/{path}`` with offline host returns 409.
-- ``GET /v1/hosts`` returns offline after the host's ``last_seen_at``
+- ``POST /v1/hosts/{id}/runners`` with missing ``workspace`` returns 422.
+- ``GET /v1/hosts`` returns offline after the host's ``updated_at``
   exceeds the liveness window (stale host detection).
+- ``GET /v1/hosts/{id}`` returns offline for an explicitly offline host.
 """
 
 from __future__ import annotations
@@ -18,7 +20,9 @@ import time
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import update
 
+from omnigent.db.db_models import SqlHost
 from omnigent.runner.transports.ws_tunnel.registry import TunnelRegistry
 from omnigent.server.host_registry import HostRegistry, RunnerExitReports
 from omnigent.server.routes.hosts import create_hosts_router
@@ -194,7 +198,7 @@ async def test_list_hosts_stale_host_reported_offline(
         FastAPI, HostRegistry, HostStore, SqlAlchemyConversationStore, TunnelRegistry
     ],
 ) -> None:
-    """GET /v1/hosts reports a host as offline when last_seen_at is stale.
+    """GET /v1/hosts reports a host as offline when updated_at is stale.
 
     A host that crashed without calling set_offline would stay
     ``status="online"`` in the DB forever. The route applies a
@@ -209,30 +213,29 @@ async def test_list_hosts_stale_host_reported_offline(
     # Verify it initially shows as online.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/v1/hosts")
+    assert resp.status_code == 200, resp.text
     hosts = resp.json()["hosts"]
     assert len(hosts) == 1
     assert hosts[0]["status"] == "online"
 
-    # Manually backdate last_seen_at to simulate a crashed host.
+    # Manually backdate updated_at to simulate a crashed host.
     # The liveness window is typically 60-120s; setting it 10 minutes
     # in the past guarantees it exceeds any reasonable window.
-    from sqlalchemy import text
-
     stale_time = int(time.time()) - 600
     with host_store._engine.connect() as conn:
         conn.execute(
-            text("UPDATE hosts SET updated_at = :ts WHERE host_id = :hid"),
-            {"ts": stale_time, "hid": "host_stale"},
+            update(SqlHost).where(SqlHost.host_id == "host_stale").values(updated_at=stale_time),
         )
         conn.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/v1/hosts")
+    assert resp.status_code == 200, resp.text
     hosts = resp.json()["hosts"]
     assert len(hosts) == 1
     assert hosts[0]["host_id"] == "host_stale"
     assert hosts[0]["status"] == "offline", (
-        "A host with a stale last_seen_at should be reported as offline. "
+        "A host with a stale updated_at should be reported as offline. "
         "The liveness check (host_is_live) is missing from the list route."
     )
 
