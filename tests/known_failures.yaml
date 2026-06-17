@@ -738,6 +738,12 @@ skips:
   # failing ones with accurate reasons so CI doesn't re-discover
   # them every run.
 
+  - id: tests/e2e/omnigent/test_repl_multiline.py::test_repl_multiline_ctrl_j_insert
+    reason: "Kept suppressed as a known shard-load/worker-killer heavy pexpect test pending a dedicated round."
+    issue: 532
+    cluster: repl-pexpect-cli
+    mode: skip
+
   - id: tests/e2e/omnigent/test_repl_ctrl_g_overview.py::test_repl_ctrl_g_overview_toggle
     reason: "REPL pexpect TIMEOUT post-path-fix: openai-agents+gpt-5-mini turn exceeds 60s pexpect deadline on ai-oss. Original skip reason still applies after #1141."
     issue: 532
@@ -1046,6 +1052,11 @@ skips:
     reason: "openai-agents empty-output/crash resurfaced on the gateway (#2707)."
     issue: 2707
     cluster: openai-agents-empty-output
+    mode: skip
+  - id: tests/e2e/test_subagent_autowake_e2e.py::test_subagent_completion_auto_wakes_parent_on_a_second_round
+    reason: "Pre-existing unsuppressed flake: gw0 worker crash under full e2e shard (xdist/loadscope); surfaced alongside #421 but independent of it. Heavy subagent autowake e2e."
+    issue: 0
+    cluster: async-dispatch-inbox-sse
     mode: skip
   - id: tests/e2e/test_steering.py::test_steering_acknowledged
     reason: "openai-agents empty-output/crash resurfaced on the gateway (#2707)."
