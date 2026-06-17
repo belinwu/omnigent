@@ -418,7 +418,8 @@ def _paginate_list_dir(
     strictly after the cursor; backward pagination (``before``)
     returns up to ``limit`` entries strictly before. Empty cursors
     return the first page. ``has_more`` is set when more entries
-    remain on the forward side of the slice.
+    remain in the pagination direction: forward of the page for
+    ``after``, before the page for ``before``.
 
     :param entries: Full sorted list of directory entries.
     :param request_id: Request id to echo back on the result frame.
@@ -444,8 +445,13 @@ def _paginate_list_dir(
             if entry.path == before:
                 end = idx
                 break
-    page = entries[start:end][:limit]
-    has_more = end - start > limit
+    if before is not None:
+        page_start = max(start, end - limit)
+        page = entries[page_start:end]
+        has_more = page_start > start
+    else:
+        page = entries[start:end][:limit]
+        has_more = end - start > limit
     return HostListDirResultFrame(
         request_id=request_id,
         status="ok",
@@ -1277,8 +1283,14 @@ class HostProcess:
             managed-host token header or — only when a token could be
             minted — ``{"Authorization": "Bearer <token>"}``.
         """
-        headers: dict[str, str] = {}
         from omnigent.host.identity import HOST_TOKEN_ENV_VAR, MANAGED_HOST_TOKEN_HEADER
+        from omnigent.runner.identity import OMNIGENT_INTERNAL_WS_ORIGIN
+
+        # Identify as a first-party client so the server's WebSocket origin
+        # guard (CSWSH protection) allows the handshake — the host process
+        # is not a browser. Seeded before either auth branch so it is sent
+        # on both the managed-token and Bearer paths.
+        headers: dict[str, str] = {"Origin": OMNIGENT_INTERNAL_WS_ORIGIN}
 
         managed_token = os.environ.get(HOST_TOKEN_ENV_VAR)
         if managed_token:
